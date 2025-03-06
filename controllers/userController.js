@@ -96,8 +96,9 @@ const loginUser = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
+const { password: _, tempPassword, ...userData } = user.toObject();
 
-    res.json({ token, user });
+    res.json({ token, user :userData});
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -120,6 +121,7 @@ const resetPassword = async (req, res) => {
     user.tempPassword = null;
     await user.save();
 
+    
     res.json({ msg: "Password reset successful. Please login with new password." });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -150,23 +152,44 @@ const getUserById = async (req, res) => {
 };
 
 
+
 const updateUser = async (req, res) => {
   try {
-    const { name, email, phone, profileImage, password } = req.body;
-    let user = await User.findById(req.params.id);
+    const { name, email, phone, imageBase64 } = req.body;
+    const userId = req.params.id; // Get user ID from request params
+
+    // Check if user exists
+    let user = await User.findById(userId);
     if (!user) return res.status(404).json({ msg: "User not found" });
 
+    let profileImage = user.profileImage; // Default to existing image
+
+    // If new Base64 image is provided, upload it to Cloudinary
+    if (imageBase64) {
+      let base64Image = imageBase64.startsWith("data:image")
+        ? imageBase64
+        : `data:image/png;base64,${imageBase64}`;
+
+      try {
+        const result = await cloudinary.uploader.upload(base64Image, {
+          folder: "uploads",
+        });
+        profileImage = result.secure_url; // Update image URL
+      } catch (uploadError) {
+        return res.status(500).json({ error: "Image upload failed" });
+      }
+    }
+
+    // Update user details
     user.name = name || user.name;
     user.email = email || user.email;
     user.phone = phone || user.phone;
-    user.profileImage = profileImage || user.profileImage;
-
-    if (password) {
-      user.password = await bcrypt.hash(password, 10);
-    }
+    user.profileImage = profileImage;
 
     await user.save();
+
     res.json({ msg: "User updated successfully!", user });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
