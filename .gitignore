@@ -1,0 +1,36 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn.lock
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Cloudinary API secrets (if stored in config files)
+config.js
+config/*.json
+
+# Logs & cache
+logs/
+*.log
+debug.log
+error.log
+cache/
+
+# IDE-specific files
+.vscode/
+.idea/
+.DS_Store
+
+# Build files
+dist/
+build/
+coverage/
+
+# Misc
+*.swp
