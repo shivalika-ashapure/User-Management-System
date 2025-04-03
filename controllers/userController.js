@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const cloudinary = require("cloudinary").v2;
 const multer = require("multer");
+const admin = require("../config/firebaseConfig");
 
 // Cloudinary Setup
 cloudinary.config({
