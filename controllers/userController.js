@@ -13,43 +13,99 @@ cloudinary.config({
 });
 
 
-// Multer Storage for Profile Image Upload
-// const storage = multer.memoryStorage();
-// const upload = multer({ storage });
-
 // Generate Temporary Password
 const generateTempPassword = () => Math.random().toString(36).slice(-8);
 
 // ✅ **Fixed registerUser Function**
+// const registerUser = async (req, res) => {
+//   try {
+//     const { name, email, phone,imageBase64} = req.body;
+//     console.log("process.env.CLOUDINARY_CLOUD_NAME",process.env.CLOUDINARY_CLOUD_NAME)
+
+
+//     // Check if the user already exists
+//     let user = await User.findOne({ email });
+//     if (user) return res.status(400).json({ msg: "User already exists" });
+
+//     // Generate and hash temporary password
+//     const tempPassword = generateTempPassword();
+//     const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
+//     const hashedPassword = await bcrypt.hash(tempPassword, 10);
+ 
+//     let base64Image= imageBase64.startsWith("data:image")
+//     ?imageBase64
+//     : `data:image/png:base64,${imageBase64}`;
+//     // Upload Profile Image to Cloudinary
+
+//     const result = await cloudinary.uploader.upload(base64Image,{
+//       folder: 'uploads',
+    
+//     });
+
+//     // Create a new user in the database
+//     console.log("result.secure_url",result.secure_url)
+//     user = new User({ name, email, phone, profileImage:result.secure_url, password: hashedPassword, tempPassword: hashedTempPassword });
+//     await user.save();
+
+//     // Send Email with Temporary Password
+//     const transporter = nodemailer.createTransport({
+//       service: "gmail",
+//       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+//     });
+
+//     await transporter.sendMail({
+//       from: process.env.EMAIL_USER,
+//       to: email,
+//       subject: "Your Temporary Password",
+//       text: `Hello ${name}, your temporary password is: ${tempPassword}`,
+//     });
+
+//     res.status(201).json({ msg: "User registered. Check email for temporary password." });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// };
+
 const registerUser = async (req, res) => {
   try {
-    const { name, email, phone,imageBase64} = req.body;
-    console.log("process.env.CLOUDINARY_CLOUD_NAME",process.env.CLOUDINARY_CLOUD_NAME)
-
-
-    // Check if the user already exists
-    let user = await User.findOne({ email });
-    if (user) return res.status(400).json({ msg: "User already exists" });
+    const { name, email, phone, imageBase64 } = req.body;
+    
+    // Check if the user already exists in MongoDB
+    let existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ msg: "User already exists" });
+    }
 
     // Generate and hash temporary password
     const tempPassword = generateTempPassword();
     const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
- 
-    let base64Image= imageBase64.startsWith("data:image")
-    ?imageBase64
-    : `data:image/png:base64,${imageBase64}`;
+
+    // Create user in Firebase Authentication
+    const userRecord = await admin.auth().createUser({
+      email,
+      password: tempPassword, // Firebase requires an initial password
+      displayName: name,
+    });
+
     // Upload Profile Image to Cloudinary
+    let base64Image = imageBase64.startsWith("data:image")
+      ? imageBase64
+      : `data:image/png;base64,${imageBase64}`;
 
-    const result = await cloudinary.uploader.upload(base64Image,{
-      folder: 'uploads',
-    
-    });
+    const result = await cloudinary.uploader.upload(base64Image, { folder: "uploads" });
+    console.log(userRecord.uid,"userRecord.uid")
+    // Save user details to MongoDB
+    const newUser = new User({
+      firebaseUid: userRecord.uid,
+      name,
+      email,
+      phone,
+      profileImage: result.secure_url,
+      password: hashedTempPassword, // Store the hashed temporary password
+      tempPassword: hashedTempPassword, // Save temp password (optional)
+    });
 
-    // Create a new user in the database
-    console.log("result.secure_url",result.secure_url)
-    user = new User({ name, email, phone, profileImage:result.secure_url, password: hashedPassword, tempPassword: hashedTempPassword });
-    await user.save();
+    await newUser.save();
 
     // Send Email with Temporary Password
     const transporter = nodemailer.createTransport({
@@ -61,7 +117,7 @@ const registerUser = async (req, res) => {
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Your Temporary Password",
-      text: `Hello ${name}, your temporary password is: ${tempPassword}`,
+      text: `Hello ${name}, your temporary password is: ${tempPassword}. Please reset your password upon first login.`,
     });
 
     res.status(201).json({ msg: "User registered. Check email for temporary password." });
@@ -69,42 +125,107 @@ const registerUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+module.exports = registerUser;
 
 
+// const loginUser = async (req, res) => {
+  // try {
+  //   const { email, password } = req.body;
 
+  //   // Check if the user exists
+  //   const user = await User.findOne({ email });
+  //   if (!user) return res.status(400).json({ msg: "User not found" });
 
+  //   // Check if user is using temporary password
+  //   if (user.tempPassword && await bcrypt.compare(password, user.tempPassword)) {
+  //     return res.status(200).json({ msg: "Please reset your password", firstTimeLogin: true });
+  //   }
+
+//     // Validate Password
+//     const isMatch = await bcrypt.compare(password, user.password);
+//     if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     // Generate JWT Token
+//     const token = jwt.sign(
+//       { id: user._id, email: user.email },
+//       process.env.JWT_SECRET,
+//       { expiresIn: "1h" }
+//     );
+// const { password: _, tempPassword, ...userData } = user.toObject();
+
+//     res.json({ token, user :userData});
+
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// // };
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if the user exists
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ msg: "User not found" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
 
-    // Check if user is using temporary password
-    if (user.tempPassword && await bcrypt.compare(password, user.tempPassword)) {
+    // Verify Firebase Authentication (User must be signed up in Firebase)
+    let firebaseUser;
+    try {
+      firebaseUser = await admin.auth().getUserByEmail(email);
+    } catch (error) {
+      return res.status(400).json({ error: "User not found in Firebase" });
+    }
+
+    // Fetch user details from MongoDB using Firebase UID
+    let dbUser = await User.findOne({ firebaseUid: firebaseUser.uid });
+    
+    // If user is missing in MongoDB, create them
+    if (!dbUser) {
+      return res.status(400).json({ error: "User not found in database" });
+    }
+
+    // Check if user is using a temporary password
+    if (dbUser.tempPassword && await bcrypt.compare(password, dbUser.tempPassword)) {
       return res.status(200).json({ msg: "Please reset your password", firstTimeLogin: true });
     }
 
-    // Validate Password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
+    // Validate Password (Check Firebase login)
+    try {
+      const auth = getAuth();
+      console.log( auth )
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const idToken = await userCredential.user.getIdToken(); // Get Firebase ID token
+
+
+      await admin.auth().verifyIdToken(idToken); // Firebase password validation
+    } catch (error) {
+      console.log(error);
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
 
     // Generate JWT Token
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { uid: firebaseUser.uid, email: firebaseUser.email },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
-const { password: _, tempPassword, ...userData } = user.toObject();
 
-    res.json({ token, user :userData});
+    res.json({ 
+      msg: "Login successful",
+      token,
+      user: {
+        name: dbUser.name,
+        email: dbUser.email,
+        phone: dbUser.phone,
+        profileImage: dbUser.profileImage,
+      },
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+module.exports = loginUser;
 
 // ✅ RESET PASSWORD FUNCTION (NO CHANGES NEEDED)
 const resetPassword = async (req, res) => {
